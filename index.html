@@ -24,6 +24,8 @@
     html { scroll-behavior: smooth; }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .leaflet-popup-content-wrapper { border-radius: 1rem; padding: 4px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15); }
+    .leaflet-popup-content { margin: 8px 10px; font-family: 'Inter', sans-serif; }
   </style>
 </head>
 
@@ -42,7 +44,7 @@
     <div class="absolute inset-0 bg-white/40 backdrop-blur-[1px]"></div>
   </div>
 
-  <!-- 1. VISTA PRINCIPAL (CATÁLOGO) -->
+  <!-- 1. VISTA PRINCIPAL (CATÁLOGO + MAPA GENERAL EXPLORADOR) -->
   <main id="seccion-principal" class="relative z-10 min-h-screen">
     <div class="relative z-10">
       
@@ -82,8 +84,37 @@
       </section>
 
       <section class="mx-auto max-w-7xl px-6 pb-24 pt-12 relative z-20">
+        <!-- Selector Catálogo / Mapa General (Solo aparece si el Admin lo activa) -->
+        <div id="barra-modo-vista" class="hidden justify-center mb-8">
+          <div class="inline-flex rounded-full bg-white p-1.5 shadow-md ring-1 ring-gray-200">
+            <button id="btn-modo-grilla" onclick="cambiarModoVista('grilla')" class="rounded-full bg-black px-6 py-2.5 text-xs font-bold text-white transition-all flex items-center gap-2 shadow-sm">
+              <i class="fa-solid fa-grip"></i> Catálogo
+            </button>
+            <button id="btn-modo-mapa" onclick="cambiarModoVista('mapa')" class="rounded-full bg-transparent px-6 py-2.5 text-xs font-bold text-gray-600 hover:text-black transition-all flex items-center gap-2">
+              <i class="fa-solid fa-map-location-dot"></i> Explorar en Mapa
+            </button>
+          </div>
+        </div>
+
         <div class="mb-12 flex flex-wrap justify-center gap-3" id="menu-categorias"></div>
 
+        <!-- CONTENEDOR DEL MAPA GENERAL EXPLORADOR -->
+        <div id="seccion-mapa-general" class="hidden mb-16">
+          <div class="bg-white/95 backdrop-blur-sm p-4 md:p-6 rounded-3xl shadow-xl border border-gray-100">
+            <div class="flex flex-wrap items-center justify-between gap-2 mb-4 px-2">
+              <div>
+                <h2 class="text-xl font-bold tracking-tight text-black flex items-center gap-2">
+                  <i class="fa-solid fa-map-location-dot text-gray-500"></i> Mapa de Propiedades y Edificios
+                </h2>
+                <p class="text-xs text-gray-500">Tocá cualquier marcador en el mapa para ver la tarjeta y entrar a la publicación.</p>
+              </div>
+              <span id="contador-pines-mapa" class="text-xs font-bold bg-gray-100 text-gray-700 px-3.5 py-1.5 rounded-full">0 ubicaciones</span>
+            </div>
+            <div id="mapa-general-explorador" class="w-full h-[500px] md:h-[620px] rounded-2xl bg-gray-200 overflow-hidden ring-1 ring-gray-200 z-10"></div>
+          </div>
+        </div>
+
+        <!-- GRILLA DE PROPIEDADES -->
         <div id="grilla-productos" class="grid grid-cols-1 gap-x-8 gap-y-12 sm:grid-cols-2 lg:grid-cols-3">
           <article class="rounded-3xl bg-white p-3 shadow-sm border border-gray-100 animate-pulse"><div class="aspect-[3/4] rounded-2xl bg-gray-200"></div><div class="px-2 pb-2 pt-4"><div class="h-4 bg-gray-200 rounded w-1/2 mb-3"></div><div class="h-6 bg-gray-200 rounded w-1/3"></div></div></article>
           <article class="rounded-3xl bg-white p-3 shadow-sm border border-gray-100 animate-pulse hidden sm:block"><div class="aspect-[3/4] rounded-2xl bg-gray-200"></div><div class="px-2 pb-2 pt-4"><div class="h-4 bg-gray-200 rounded w-1/2 mb-3"></div><div class="h-6 bg-gray-200 rounded w-1/3"></div></div></article>
@@ -115,18 +146,15 @@
     </header>
 
     <div class="mx-auto max-w-7xl px-4 pt-8 sm:px-6 relative z-20">
-      <!-- Encabezado del Edificio (Foto de Portada, Nombre, Descripción y Ubicación) -->
       <div class="bg-white/95 backdrop-blur-sm p-6 md:p-10 rounded-3xl shadow-sm border border-gray-100 mb-12">
         <div class="flex flex-col lg:flex-row gap-8 items-start">
           
-          <!-- Foto de Portada del Edificio (Si existe y no está oculta) -->
           <div id="contenedor-img-subcarpeta" class="hidden w-full sm:w-64 lg:w-72 shrink-0 mx-auto lg:mx-0">
             <div class="aspect-[3/4] overflow-hidden rounded-2xl bg-gray-100 border border-gray-100 shadow-sm">
               <img id="sub-vista-img" src="" alt="Portada del Edificio" class="w-full h-full object-cover">
             </div>
           </div>
 
-          <!-- Información y Mapa del Edificio -->
           <div class="flex-1 w-full flex flex-col gap-6">
             <div>
               <span id="sub-vista-cat" class="text-xs font-bold uppercase tracking-[0.15em] text-white bg-black px-3.5 py-1.5 rounded-full inline-flex items-center gap-1.5"><i class="fa-solid fa-building"></i> Categoría</span>
@@ -134,7 +162,6 @@
               <p id="sub-vista-desc" class="mt-4 text-base leading-relaxed text-gray-600 whitespace-pre-wrap break-words"></p>
             </div>
 
-            <!-- Mapa del Edificio -->
             <div id="contenedor-mapa-subcarpeta" class="hidden w-full pt-2 border-t border-gray-100">
               <h2 class="text-sm font-bold uppercase tracking-wider text-gray-500 mb-3 flex items-center gap-2"><i class="fa-solid fa-map-location-dot text-gray-400"></i> Ubicación del Edificio</h2>
               <div id="mapa-vista-subcarpeta" class="w-full aspect-[16/9] max-h-80 rounded-2xl bg-gray-200 overflow-hidden ring-1 ring-gray-200 z-10"></div>
@@ -144,7 +171,6 @@
         </div>
       </div>
 
-      <!-- Publicaciones que pertenecen al Edificio -->
       <div class="mb-8 flex items-center justify-between">
         <h2 class="text-2xl font-bold tracking-tight text-black">Disponibles</h2>
       </div>
@@ -211,7 +237,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, doc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyAHEemfeOAbqn8zwcJIQMgPCWoj-rieWjo",
@@ -225,26 +251,43 @@
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
+    const COORDS_SAN_VICENTE = [-26.9942, -54.4775];
+
     let productos = [];
     let categorias = [];
     let subcarpetas = [];
     let subcarpetaActiva = null;
+
+    let mapaGeneralHabilitado = false;
+    let modoVistaActual = 'grilla';
+    let mapaGeneral = null;
+    let capaMarcadoresGeneral = null;
+    let ultimasSubcarpetasFiltradas = [];
+    let ultimosProductosFiltrados = [];
 
     let mapaCliente = null; let markerCliente = null;
     let mapaSubVista = null; let markerSubVista = null;
     let fotosUnicasActuales = [];
 
     async function cargarDatos() {
-      const [catSnap, subSnap, prodSnap] = await Promise.all([
+      const [catSnap, subSnap, prodSnap, mapaConfigSnap] = await Promise.all([
         getDocs(collection(db, "categorias_inmuebles")),
         getDocs(collection(db, "subcarpetas_inmuebles")),
-        getDocs(collection(db, "inmuebles"))
+        getDocs(collection(db, "inmuebles")),
+        getDoc(doc(db, "configuracion_inmuebles", "mapa_general"))
       ]);
 
       catSnap.forEach((doc) => { categorias.push({ id: doc.id, ...doc.data() }); });
       subSnap.forEach((doc) => { subcarpetas.push({ id: doc.id, ...doc.data() }); });
       prodSnap.forEach((doc) => { productos.push({ id: doc.id, ...doc.data() }); });
       
+      if (mapaConfigSnap.exists() && mapaConfigSnap.data().activo) {
+        mapaGeneralHabilitado = true;
+        const barraModo = document.getElementById('barra-modo-vista');
+        barraModo.classList.remove('hidden');
+        barraModo.classList.add('flex');
+      }
+
       renderizarMenu();
       filtrar('todo');
       quitarSplashScreen();
@@ -265,6 +308,110 @@
       setTimeout(() => {
         splashScreen.style.display = 'none';
       }, 2100);
+    }
+
+    // --- ALTERNAR ENTRE CATÁLOGO Y MAPA GENERAL ---
+    window.cambiarModoVista = function(modo) {
+      if (!mapaGeneralHabilitado) return;
+      modoVistaActual = modo;
+
+      const btnGrilla = document.getElementById('btn-modo-grilla');
+      const btnMapa = document.getElementById('btn-modo-mapa');
+      const secMapa = document.getElementById('seccion-mapa-general');
+      const secGrilla = document.getElementById('grilla-productos');
+
+      if (modo === 'mapa') {
+        btnMapa.className = "rounded-full bg-black px-6 py-2.5 text-xs font-bold text-white transition-all flex items-center gap-2 shadow-sm";
+        btnGrilla.className = "rounded-full bg-transparent px-6 py-2.5 text-xs font-bold text-gray-600 hover:text-black transition-all flex items-center gap-2";
+        secMapa.classList.remove('hidden');
+        secGrilla.classList.add('hidden');
+        renderizarPinesMapaGeneral(ultimasSubcarpetasFiltradas, ultimosProductosFiltrados);
+      } else {
+        btnGrilla.className = "rounded-full bg-black px-6 py-2.5 text-xs font-bold text-white transition-all flex items-center gap-2 shadow-sm";
+        btnMapa.className = "rounded-full bg-transparent px-6 py-2.5 text-xs font-bold text-gray-600 hover:text-black transition-all flex items-center gap-2";
+        secMapa.classList.add('hidden');
+        secGrilla.classList.remove('hidden');
+      }
+    }
+
+    function renderizarPinesMapaGeneral(listaSubcarpetas, listaProductos) {
+      if (!mapaGeneral) {
+        mapaGeneral = L.map('mapa-general-explorador').setView(COORDS_SAN_VICENTE, 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mapaGeneral);
+        capaMarcadoresGeneral = L.layerGroup().addTo(mapaGeneral);
+      }
+
+      capaMarcadoresGeneral.clearLayers();
+      const coordenadasParaAjuste = [];
+      let totalPines = 0;
+
+      // 1. Pines de Edificios / Subcarpetas
+      listaSubcarpetas.forEach(sub => {
+        if (sub.lat && sub.lng && !sub.ocultarUbicacion) {
+          totalPines++;
+          coordenadasParaAjuste.push([sub.lat, sub.lng]);
+
+          const cantDisp = obtenerProductosVisibles().filter(p => p.subcarpetaId === sub.id).length;
+          const imgPopup = (sub.imagen && !sub.ocultarImagen)
+            ? `<img src="${sub.imagen}" class="w-full h-28 object-cover rounded-lg mb-2 border border-gray-100">`
+            : '';
+
+          const htmlPopupSub = `
+            <div class="w-48 text-left">
+              ${imgPopup}
+              <span class="inline-block text-[9px] font-bold uppercase tracking-wider bg-black text-white px-2 py-0.5 rounded-full mb-1">🏢 Edificio • ${sub.categoria}</span>
+              <h4 class="font-bold text-sm text-black leading-snug mb-1">${sub.nombre}</h4>
+              <p class="text-[11px] text-gray-500 mb-2.5">${cantDisp} ${cantDisp === 1 ? 'disponible' : 'disponibles'}</p>
+              <button onclick="abrirSubcarpeta('${sub.id}')" class="w-full bg-black hover:bg-gray-800 text-white text-xs font-bold py-2 px-3 rounded-lg transition text-center block">
+                Entrar al edificio
+              </button>
+            </div>
+          `;
+
+          const marker = L.marker([sub.lat, sub.lng]).bindPopup(htmlPopupSub);
+          capaMarcadoresGeneral.addLayer(marker);
+        }
+      });
+
+      // 2. Pines de Propiedades Independientes
+      listaProductos.forEach(prod => {
+        if (prod.lat && prod.lng && !prod.ocultarUbicacion) {
+          totalPines++;
+          coordenadasParaAjuste.push([prod.lat, prod.lng]);
+
+          const tienePrecio = prod.precio && !prod.ocultarPrecio;
+          const precioTexto = tienePrecio ? `<p class="font-black text-sm text-black mb-2">$${prod.precio}</p>` : '<div class="mb-2"></div>';
+          const imgPopup = prod.imagen ? `<img src="${prod.imagen}" class="w-full h-28 object-cover rounded-lg mb-2 border border-gray-100">` : '';
+
+          const htmlPopupProd = `
+            <div class="w-48 text-left">
+              ${imgPopup}
+              <span class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">${prod.categoria}</span>
+              <h4 class="font-bold text-sm text-black leading-snug mb-1">${prod.nombre}</h4>
+              ${precioTexto}
+              <button onclick="abrirDetalle('${prod.id}')" class="w-full bg-black hover:bg-gray-800 text-white text-xs font-bold py-2 px-3 rounded-lg transition text-center block">
+                Ver publicación
+              </button>
+            </div>
+          `;
+
+          const marker = L.marker([prod.lat, prod.lng]).bindPopup(htmlPopupProd);
+          capaMarcadoresGeneral.addLayer(marker);
+        }
+      });
+
+      document.getElementById('contador-pines-mapa').innerText = `${totalPines} ${totalPines === 1 ? 'ubicación' : 'ubicaciones'}`;
+
+      setTimeout(() => {
+        mapaGeneral.invalidateSize();
+        if (coordenadasParaAjuste.length > 1) {
+          mapaGeneral.fitBounds(coordenadasParaAjuste, { padding: [45, 45], maxZoom: 16 });
+        } else if (coordenadasParaAjuste.length === 1) {
+          mapaGeneral.setView(coordenadasParaAjuste[0], 15);
+        } else {
+          mapaGeneral.setView(COORDS_SAN_VICENTE, 14);
+        }
+      }, 150);
     }
 
     function renderizarMenu() {
@@ -367,6 +514,13 @@
     }
 
     function renderizarCatalogo(listaSubcarpetas, items) {
+      ultimasSubcarpetasFiltradas = listaSubcarpetas;
+      ultimosProductosFiltrados = items;
+
+      if (modoVistaActual === 'mapa' && mapaGeneralHabilitado) {
+        renderizarPinesMapaGeneral(listaSubcarpetas, items);
+      }
+
       const grilla = document.getElementById("grilla-productos");
       grilla.innerHTML = "";
 
@@ -429,7 +583,6 @@
       document.getElementById('sub-vista-titulo').innerText = sub.nombre;
       document.getElementById('sub-vista-desc').innerText = sub.descripcion || "";
 
-      // Foto de portada dentro del menú del edificio
       const divImgSub = document.getElementById('contenedor-img-subcarpeta');
       const imgSub = document.getElementById('sub-vista-img');
       if (sub.imagen && !sub.ocultarImagen) {
@@ -476,6 +629,9 @@
       subcarpetaActiva = null;
       document.getElementById('vista-subcarpeta').classList.add('hidden');
       document.getElementById('seccion-principal').classList.remove('hidden');
+      if (modoVistaActual === 'mapa' && mapaGeneral) {
+        setTimeout(() => mapaGeneral.invalidateSize(), 100);
+      }
       window.scrollTo(0, 0);
     }
 
@@ -574,6 +730,9 @@
         if (mapaSubVista) setTimeout(() => mapaSubVista.invalidateSize(), 100);
       } else {
         document.getElementById('seccion-principal').classList.remove('hidden');
+        if (modoVistaActual === 'mapa' && mapaGeneral) {
+          setTimeout(() => mapaGeneral.invalidateSize(), 100);
+        }
       }
     }
 
