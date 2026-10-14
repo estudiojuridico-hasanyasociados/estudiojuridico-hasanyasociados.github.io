@@ -51,7 +51,13 @@
       <div class="text-xl font-bold tracking-tight">
         Hasan y Asociados <span class="font-light text-gray-500">Admin</span>
       </div>
-      <div class="flex flex-wrap gap-2 md:gap-3">
+      <div class="flex flex-wrap gap-2 md:gap-3 items-center">
+        <!-- BOTÓN INTERRUPTOR DEL MAPA GENERAL -->
+        <button id="btn-toggle-mapa-general" onclick="toggleMapaGeneral()" class="bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold py-2 px-4 rounded-full transition flex items-center gap-2 border border-gray-200" title="Mostrar u ocultar el Mapa General al público">
+          <i id="icon-mapa-general" class="fa-solid fa-map-location-dot text-gray-400"></i>
+          <span id="txt-mapa-general">Mapa General: Oculto</span>
+        </button>
+
         <button onclick="abrirModalCategorias()" class="bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-semibold py-2 px-4 rounded-full transition flex items-center gap-2">
           <i class="fa-solid fa-tags"></i> <span class="hidden sm:inline">Categorías</span>
         </button>
@@ -61,7 +67,7 @@
         <button onclick="abrirModalNuevo()" class="bg-black hover:bg-gray-800 text-white text-xs font-semibold py-2 px-4 rounded-full transition shadow-md flex items-center gap-2">
           <i class="fa-solid fa-plus"></i> <span class="hidden sm:inline">Nueva Propiedad</span>
         </button>
-        <button onclick="cerrarSesion()" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold py-2 px-4 rounded-full transition shadow-sm border border-red-100 flex items-center gap-2 ml-2" title="Cerrar sesión">
+        <button onclick="cerrarSesion()" class="bg-red-50 hover:bg-red-100 text-red-600 text-xs font-semibold py-2 px-4 rounded-full transition shadow-sm border border-red-100 flex items-center gap-2 ml-1" title="Cerrar sesión">
           <i class="fa-solid fa-right-from-bracket"></i>
         </button>
       </div>
@@ -249,7 +255,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, getDocs, addDoc, updateDoc, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, collection, getDocs, addDoc, updateDoc, doc, deleteDoc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
     const firebaseConfig = {
@@ -274,6 +280,7 @@
     let categorias = [];
     let subcarpetas = [];
     let categoriaAdminActual = "todos";
+    let mapaGeneralActivo = false;
 
     let urlImagenActual = "";
     let galeriaActual = [];
@@ -316,9 +323,52 @@
     window.cerrarSesion = function() { signOut(auth).then(() => { window.location.reload(); }); }
 
     async function iniciarAppAdmin() {
+      await cargarEstadoMapaGeneral();
       await inicializarCategorias();
       await refrescarSubcarpetas();
       await cargarProductos();
+    }
+
+    // --- CONFIGURACIÓN MAPA GENERAL (VISIBLE / OCULTO AL PÚBLICO) ---
+    async function cargarEstadoMapaGeneral() {
+      try {
+        const snap = await getDoc(doc(db, "configuracion_inmuebles", "mapa_general"));
+        if (snap.exists()) {
+          mapaGeneralActivo = snap.data().activo || false;
+        } else {
+          mapaGeneralActivo = false;
+        }
+        actualizarUIMapaGeneral();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    function actualizarUIMapaGeneral() {
+      const btn = document.getElementById('btn-toggle-mapa-general');
+      const icon = document.getElementById('icon-mapa-general');
+      const txt = document.getElementById('txt-mapa-general');
+
+      if (mapaGeneralActivo) {
+        btn.className = "bg-green-50 hover:bg-green-100 text-green-800 text-xs font-bold py-2 px-4 rounded-full transition flex items-center gap-2 border border-green-300 shadow-sm";
+        icon.className = "fa-solid fa-map-location-dot text-green-600";
+        txt.innerText = "Mapa General: Visible";
+      } else {
+        btn.className = "bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-semibold py-2 px-4 rounded-full transition flex items-center gap-2 border border-gray-200";
+        icon.className = "fa-solid fa-map-location-dot text-gray-400";
+        txt.innerText = "Mapa General: Oculto";
+      }
+    }
+
+    window.toggleMapaGeneral = async function() {
+      const nuevoEstado = !mapaGeneralActivo;
+      try {
+        await setDoc(doc(db, "configuracion_inmuebles", "mapa_general"), { activo: nuevoEstado }, { merge: true });
+        mapaGeneralActivo = nuevoEstado;
+        actualizarUIMapaGeneral();
+      } catch (e) {
+        alert("No se pudo cambiar el estado del Mapa General.");
+      }
     }
 
     async function inicializarCategorias() {
