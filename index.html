@@ -279,4 +279,505 @@
       authDomain: "tio-juanjo.firebaseapp.com",
       projectId: "tio-juanjo",
       storageBucket: "tio-juanjo.firebasestorage.app",
-      messagingSenderId: "465
+      messagingSenderId: "465060896072",
+      appId: "1:465060896072:web:d96cafe70ef8afd56e677d"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const COORDS_SAN_VICENTE = [-26.9942, -54.4775];
+
+    let productos = [];
+    let categorias = [];
+    let subcarpetas = [];
+    let subcarpetaActiva = null;
+
+    let mapaGeneralHabilitado = false;
+    let modoVistaActual = 'grilla';
+    let mapaGeneral = null;
+    let capaMarcadoresGeneral = null;
+    let ultimasSubcarpetasFiltradas = [];
+    let ultimosProductosFiltrados = [];
+
+    let mapaCliente = null; let markerCliente = null;
+    let mapaSubVista = null; let markerSubVista = null;
+    let fotosUnicasActuales = [];
+
+    async function cargarDatos() {
+      const [catSnap, subSnap, prodSnap, mapaConfigSnap] = await Promise.all([
+        getDocs(collection(db, "categorias_inmuebles")),
+        getDocs(collection(db, "subcarpetas_inmuebles")),
+        getDocs(collection(db, "inmuebles")),
+        getDoc(doc(db, "configuracion_inmuebles", "mapa_general"))
+      ]);
+
+      catSnap.forEach((doc) => { categorias.push({ id: doc.id, ...doc.data() }); });
+      subSnap.forEach((doc) => { subcarpetas.push({ id: doc.id, ...doc.data() }); });
+      prodSnap.forEach((doc) => { productos.push({ id: doc.id, ...doc.data() }); });
+      
+      if (mapaConfigSnap.exists() && mapaConfigSnap.data().activo) {
+        mapaGeneralHabilitado = true;
+        const barraModo = document.getElementById('barra-modo-vista');
+        barraModo.classList.remove('hidden');
+        barraModo.classList.add('flex');
+      }
+
+      renderizarMenu();
+      filtrar('todo');
+      quitarSplashScreen();
+    }
+
+    function quitarSplashScreen() {
+      const logo = document.getElementById('splash-logo');
+      const curtainTop = document.getElementById('curtain-top');
+      const curtainBottom = document.getElementById('curtain-bottom');
+      const splashScreen = document.getElementById('splash-screen');
+
+      setTimeout(() => { logo.classList.add('opacity-0', 'scale-90'); }, 600);
+      setTimeout(() => {
+        curtainTop.classList.add('-translate-y-full');
+        curtainBottom.classList.add('translate-y-full');
+      }, 1100);
+
+      setTimeout(() => {
+        splashScreen.style.display = 'none';
+      }, 2100);
+    }
+
+    // --- ALTERNAR ENTRE CATÁLOGO Y MAPA GENERAL ---
+    window.cambiarModoVista = function(modo) {
+      if (!mapaGeneralHabilitado) return;
+      modoVistaActual = modo;
+
+      const btnGrilla = document.getElementById('btn-modo-grilla');
+      const btnMapa = document.getElementById('btn-modo-mapa');
+      const secMapa = document.getElementById('seccion-mapa-general');
+      const secGrilla = document.getElementById('grilla-productos');
+
+      if (modo === 'mapa') {
+        btnMapa.className = "rounded-full bg-black px-6 py-2.5 text-xs font-bold text-white transition-all flex items-center gap-2 shadow-sm";
+        btnGrilla.className = "rounded-full bg-transparent px-6 py-2.5 text-xs font-bold text-gray-600 hover:text-black transition-all flex items-center gap-2";
+        secMapa.classList.remove('hidden');
+        secGrilla.classList.add('hidden');
+        renderizarPinesMapaGeneral(ultimasSubcarpetasFiltradas, ultimosProductosFiltrados);
+      } else {
+        btnGrilla.className = "rounded-full bg-black px-6 py-2.5 text-xs font-bold text-white transition-all flex items-center gap-2 shadow-sm";
+        btnMapa.className = "rounded-full bg-transparent px-6 py-2.5 text-xs font-bold text-gray-600 hover:text-black transition-all flex items-center gap-2";
+        secMapa.classList.add('hidden');
+        secGrilla.classList.remove('hidden');
+      }
+    }
+
+    function renderizarPinesMapaGeneral(listaSubcarpetas, listaProductos) {
+      if (!mapaGeneral) {
+        mapaGeneral = L.map('mapa-general-explorador').setView(COORDS_SAN_VICENTE, 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mapaGeneral);
+        capaMarcadoresGeneral = L.layerGroup().addTo(mapaGeneral);
+      }
+
+      capaMarcadoresGeneral.clearLayers();
+      const coordenadasParaAjuste = [];
+      let totalPines = 0;
+
+      // 1. Pines de Edificios / Subcarpetas
+      listaSubcarpetas.forEach(sub => {
+        if (sub.lat && sub.lng && !sub.ocultarUbicacion) {
+          totalPines++;
+          coordenadasParaAjuste.push([sub.lat, sub.lng]);
+
+          const cantDisp = obtenerProductosVisibles().filter(p => p.subcarpetaId === sub.id).length;
+          const imgPopup = (sub.imagen && !sub.ocultarImagen)
+            ? `<div class="w-full h-36 bg-gray-100 overflow-hidden"><img src="${sub.imagen}" class="w-full h-full object-cover block"></div>`
+            : '';
+
+          const htmlPopupSub = `
+            <div class="w-[220px] text-left bg-white overflow-hidden">
+              ${imgPopup}
+              <div class="p-3.5">
+                <span class="inline-block text-[9px] font-bold uppercase tracking-wider bg-black text-white px-2 py-0.5 rounded-full mb-1.5">🏢 Edificio • ${sub.categoria}</span>
+                <h4 class="font-bold text-sm text-black leading-snug mb-1 break-words">${sub.nombre}</h4>
+                <p class="text-[11px] text-gray-500 mb-3">${cantDisp} ${cantDisp === 1 ? 'disponible' : 'disponibles'}</p>
+                <button onclick="abrirSubcarpeta('${sub.id}')" class="w-full bg-black hover:bg-gray-800 text-white text-xs font-bold py-2.5 px-3 rounded-xl transition text-center block shadow-sm">
+                  Entrar al edificio
+                </button>
+              </div>
+            </div>
+          `;
+
+          const marker = L.marker([sub.lat, sub.lng]).bindPopup(htmlPopupSub, { minWidth: 220, maxWidth: 220 });
+          capaMarcadoresGeneral.addLayer(marker);
+        }
+      });
+
+      // 2. Pines de Propiedades Independientes
+      listaProductos.forEach(prod => {
+        if (prod.lat && prod.lng && !prod.ocultarUbicacion) {
+          totalPines++;
+          coordenadasParaAjuste.push([prod.lat, prod.lng]);
+
+          const tienePrecio = prod.precio && !prod.ocultarPrecio;
+          const precioTexto = tienePrecio ? `<p class="font-black text-base text-black mb-3">$${prod.precio}</p>` : '<div class="mb-2"></div>';
+          const imgPopup = prod.imagen 
+            ? `<div class="w-full h-36 bg-gray-100 overflow-hidden"><img src="${prod.imagen}" class="w-full h-full object-cover block"></div>` 
+            : '';
+
+          const htmlPopupProd = `
+            <div class="w-[220px] text-left bg-white overflow-hidden">
+              ${imgPopup}
+              <div class="p-3.5">
+                <span class="block text-[9px] font-bold uppercase tracking-widest text-gray-400 mb-1">${prod.categoria}</span>
+                <h4 class="font-bold text-sm text-black leading-snug mb-1.5 break-words">${prod.nombre}</h4>
+                ${precioTexto}
+                <button onclick="abrirDetalle('${prod.id}')" class="w-full bg-black hover:bg-gray-800 text-white text-xs font-bold py-2.5 px-3 rounded-xl transition text-center block shadow-sm">
+                  Ver publicación
+                </button>
+              </div>
+            </div>
+          `;
+
+          const marker = L.marker([prod.lat, prod.lng]).bindPopup(htmlPopupProd, { minWidth: 220, maxWidth: 220 });
+          capaMarcadoresGeneral.addLayer(marker);
+        }
+      });
+
+      document.getElementById('contador-pines-mapa').innerText = `${totalPines} ${totalPines === 1 ? 'ubicación' : 'ubicaciones'}`;
+
+      setTimeout(() => {
+        mapaGeneral.invalidateSize();
+        if (coordenadasParaAjuste.length > 1) {
+          mapaGeneral.fitBounds(coordenadasParaAjuste, { padding: [45, 45], maxZoom: 16 });
+        } else if (coordenadasParaAjuste.length === 1) {
+          mapaGeneral.setView(coordenadasParaAjuste[0], 15);
+        } else {
+          mapaGeneral.setView(COORDS_SAN_VICENTE, 14);
+        }
+      }, 150);
+    }
+
+    function renderizarMenu() {
+      const menu = document.getElementById("menu-categorias");
+      menu.innerHTML = `<button onclick="filtrar('todo')" class="filter-btn rounded-full bg-black px-6 py-2.5 text-sm font-bold text-white transition-all shadow-md" data-filter="todo">Todo</button>`;
+      const catVisibles = categorias.filter(cat => !cat.oculta);
+      catVisibles.forEach(cat => {
+        menu.innerHTML += `<button onclick="filtrar('${cat.nombre}')" class="filter-btn rounded-full bg-white px-6 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:bg-gray-50 ring-1 ring-gray-200" data-filter="${cat.nombre}">${cat.nombre}</button>`;
+      });
+    }
+
+    function obtenerNombresCategoriasVisibles() {
+      return categorias.filter(c => !c.oculta).map(c => c.nombre.toLowerCase());
+    }
+
+    function obtenerProductosVisibles() {
+      const noms = obtenerNombresCategoriasVisibles();
+      return productos.filter(p => noms.includes(p.categoria.toLowerCase()) && !p.oculta);
+    }
+
+    function obtenerSubcarpetasVisibles() {
+      const noms = obtenerNombresCategoriasVisibles();
+      return subcarpetas.filter(s => noms.includes(s.categoria.toLowerCase()) && !s.oculta);
+    }
+
+    window.buscarProducto = function() {
+      const texto = document.getElementById("buscador").value.toLowerCase().trim();
+      
+      if(texto === "") {
+        filtrar('todo');
+        return;
+      }
+      
+      document.querySelectorAll('.filter-btn').forEach(b => {
+        b.className = 'filter-btn rounded-full bg-white px-6 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:bg-gray-50 ring-1 ring-gray-200';
+      });
+
+      const subsFiltradas = obtenerSubcarpetasVisibles().filter(s =>
+        s.nombre.toLowerCase().includes(texto) ||
+        (s.descripcion && s.descripcion.toLowerCase().includes(texto)) ||
+        s.categoria.toLowerCase().includes(texto)
+      );
+
+      const perms = obtenerProductosVisibles();
+      const prodFiltrados = perms.filter(p =>
+        p.nombre.toLowerCase().includes(texto) ||
+        p.descripcion.toLowerCase().includes(texto) ||
+        p.categoria.toLowerCase().includes(texto)
+      );
+
+      renderizarCatalogo(subsFiltradas, prodFiltrados);
+    }
+
+    window.filtrar = function(catNombre) {
+      document.getElementById("buscador").value = "";
+      
+      document.querySelectorAll('.filter-btn').forEach(btn => {
+        if(btn.dataset.filter.toLowerCase() === catNombre.toLowerCase()) {
+          btn.className = 'filter-btn rounded-full bg-black px-6 py-2.5 text-sm font-bold text-white transition-all shadow-md';
+        } else {
+          btn.className = 'filter-btn rounded-full bg-white px-6 py-2.5 text-sm font-medium text-gray-600 shadow-sm transition-all hover:bg-gray-50 ring-1 ring-gray-200';
+        }
+      });
+
+      const subsVisibles = obtenerSubcarpetasVisibles();
+      const subsFiltradas = catNombre.toLowerCase() === "todo"
+        ? subsVisibles
+        : subsVisibles.filter(s => s.categoria.toLowerCase() === catNombre.toLowerCase());
+
+      const perms = obtenerProductosVisibles().filter(p => !p.subcarpetaId);
+      const filtrados = catNombre.toLowerCase() === "todo"
+        ? perms
+        : perms.filter(p => p.categoria.toLowerCase() === catNombre.toLowerCase());
+
+      renderizarCatalogo(subsFiltradas, filtrados);
+    }
+
+    function crearTarjetaPropiedad(prod, index) {
+      const tarjeta = document.createElement('article');
+      tarjeta.className = "group cursor-pointer rounded-3xl bg-white/95 backdrop-blur-sm p-3 shadow-md shadow-black/5 border border-gray-100 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:shadow-black/10 flex flex-col";
+      tarjeta.onclick = () => window.abrirDetalle(prod.id);
+      
+      const tienePrecioVisible = prod.precio && !prod.ocultarPrecio;
+      const precioHTML = tienePrecioVisible ? `<p class="mt-auto pt-4 text-2xl font-black tracking-tight text-black">$${prod.precio}</p>` : '';
+      const atributosImagen = index < 6 ? 'fetchpriority="high"' : 'loading="lazy"';
+      const indicadorGaleria = (prod.galeria && prod.galeria.length > 0) ? `<div class="absolute top-3 right-3 rounded-full bg-white/95 px-3 py-1.5 text-[10px] font-bold text-black shadow-sm flex items-center gap-1"><i class="fa-solid fa-images"></i> +${prod.galeria.length}</div>` : '';
+
+      tarjeta.innerHTML = `
+        <div class="aspect-[3/4] overflow-hidden rounded-2xl bg-gray-100 relative">
+          <img src="${prod.imagen}" ${atributosImagen} alt="${prod.nombre}" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />
+          ${indicadorGaleria}
+        </div>
+        <div class="px-3 pb-3 pt-5 flex-1 flex flex-col">
+          <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">${prod.categoria}</span>
+          <h3 class="text-xl font-bold tracking-tight text-black leading-tight line-clamp-2">${prod.nombre}</h3>
+          ${precioHTML}
+        </div>
+      `;
+      return tarjeta;
+    }
+
+    function renderizarCatalogo(listaSubcarpetas, items) {
+      ultimasSubcarpetasFiltradas = listaSubcarpetas;
+      ultimosProductosFiltrados = items;
+
+      if (modoVistaActual === 'mapa' && mapaGeneralHabilitado) {
+        renderizarPinesMapaGeneral(listaSubcarpetas, items);
+      }
+
+      const grilla = document.getElementById("grilla-productos");
+      grilla.innerHTML = "";
+
+      if (listaSubcarpetas.length === 0 && items.length === 0) {
+        grilla.innerHTML = `<div class="col-span-full text-center py-20 bg-white/80 rounded-3xl border border-gray-200 backdrop-blur-sm"><i class="fa-solid fa-house-circle-exclamation text-4xl text-gray-300 mb-3"></i><p class="text-gray-500 font-medium">No se encontraron propiedades.</p></div>`;
+        return;
+      }
+
+      // 1. Mostrar tarjetas de Edificios / Subcarpetas
+      listaSubcarpetas.forEach((sub) => {
+        const cantPublicaciones = obtenerProductosVisibles().filter(p => p.subcarpetaId === sub.id).length;
+        const tarjetaSub = document.createElement('article');
+        tarjetaSub.className = "group cursor-pointer rounded-3xl bg-white/95 backdrop-blur-sm p-3 shadow-md shadow-black/5 border-2 border-gray-900/10 transition-all duration-300 hover:-translate-y-2 hover:shadow-xl hover:shadow-black/10 flex flex-col";
+        tarjetaSub.onclick = () => window.abrirSubcarpeta(sub.id);
+
+        const mostrarPortadaSub = sub.imagen && !sub.ocultarImagen;
+        const visualPortadaHTML = mostrarPortadaSub
+          ? `<img src="${sub.imagen}" alt="${sub.nombre}" class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-110" />`
+          : `<div class="h-full w-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-100 to-gray-200 text-gray-400 transition-transform duration-700 group-hover:scale-105"><i class="fa-solid fa-building text-6xl text-gray-300"></i></div>`;
+
+        tarjetaSub.innerHTML = `
+          <div class="aspect-[3/4] overflow-hidden rounded-2xl bg-gray-100 relative">
+            ${visualPortadaHTML}
+            <div class="absolute top-3 left-3 rounded-full bg-black/90 backdrop-blur-md px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white shadow-md flex items-center gap-1.5">
+              <i class="fa-solid fa-building"></i> Edificio / Complejo
+            </div>
+            <div class="absolute bottom-3 right-3 rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-black shadow-sm">
+              ${cantPublicaciones} ${cantPublicaciones === 1 ? 'disponible' : 'disponibles'}
+            </div>
+          </div>
+          <div class="px-3 pb-3 pt-5 flex-1 flex flex-col">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">${sub.categoria}</span>
+            <h3 class="text-xl font-bold tracking-tight text-black leading-tight line-clamp-2">${sub.nombre}</h3>
+            <p class="mt-auto pt-4 text-sm font-bold text-black flex items-center gap-2 group-hover:translate-x-1 transition-transform">
+              Entrar al edificio <i class="fa-solid fa-arrow-right"></i>
+            </p>
+          </div>
+        `;
+        grilla.appendChild(tarjetaSub);
+      });
+
+      // 2. Mostrar publicaciones independientes
+      items.forEach((prod, index) => {
+        grilla.appendChild(crearTarjetaPropiedad(prod, index));
+      });
+    }
+
+    // --- ABRIR / CERRAR MENÚ DE SUBCARPETA (EDIFICIO) ---
+    window.abrirSubcarpeta = function(id) {
+      const sub = subcarpetas.find(s => s.id === id);
+      if (!sub) return;
+      subcarpetaActiva = sub;
+
+      document.getElementById('seccion-principal').classList.add('hidden');
+      document.getElementById('vista-detalle').classList.add('hidden');
+      document.getElementById('vista-subcarpeta').classList.remove('hidden');
+      window.scrollTo(0, 0);
+
+      document.getElementById('sub-vista-cat').innerHTML = `<i class="fa-solid fa-building"></i> ${sub.categoria}`;
+      document.getElementById('sub-vista-titulo').innerText = sub.nombre;
+      document.getElementById('sub-vista-desc').innerText = sub.descripcion || "";
+
+      const divImgSub = document.getElementById('contenedor-img-subcarpeta');
+      const imgSub = document.getElementById('sub-vista-img');
+      if (sub.imagen && !sub.ocultarImagen) {
+        imgSub.src = sub.imagen;
+        divImgSub.classList.remove('hidden');
+      } else {
+        imgSub.src = "";
+        divImgSub.classList.add('hidden');
+      }
+
+      const divMapaSub = document.getElementById('contenedor-mapa-subcarpeta');
+      if (sub.lat && sub.lng && !sub.ocultarUbicacion) {
+        divMapaSub.classList.remove('hidden');
+        setTimeout(() => {
+          if (!mapaSubVista) {
+            mapaSubVista = L.map('mapa-vista-subcarpeta').setView([sub.lat, sub.lng], 16);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mapaSubVista);
+            markerSubVista = L.marker([sub.lat, sub.lng]).addTo(mapaSubVista);
+          } else {
+            mapaSubVista.setView([sub.lat, sub.lng], 16);
+            if (markerSubVista) mapaSubVista.removeLayer(markerSubVista);
+            markerSubVista = L.marker([sub.lat, sub.lng]).addTo(mapaSubVista);
+          }
+          mapaSubVista.invalidateSize();
+        }, 100);
+      } else {
+        divMapaSub.classList.add('hidden');
+      }
+
+      const grillaSub = document.getElementById('grilla-subcarpeta-productos');
+      grillaSub.innerHTML = "";
+      const unidades = obtenerProductosVisibles().filter(p => p.subcarpetaId === sub.id);
+
+      if (unidades.length === 0) {
+        grillaSub.innerHTML = `<div class="col-span-full text-center py-16 bg-white/80 rounded-3xl border border-gray-200"><p class="text-gray-500 font-medium">No hay publicaciones disponibles en este edificio por el momento.</p></div>`;
+      } else {
+        unidades.forEach((prod, index) => {
+          grillaSub.appendChild(crearTarjetaPropiedad(prod, index));
+        });
+      }
+    }
+
+    window.cerrarSubcarpeta = function() {
+      subcarpetaActiva = null;
+      document.getElementById('vista-subcarpeta').classList.add('hidden');
+      document.getElementById('seccion-principal').classList.remove('hidden');
+      if (modoVistaActual === 'mapa' && mapaGeneral) {
+        setTimeout(() => mapaGeneral.invalidateSize(), 100);
+      }
+      window.scrollTo(0, 0);
+    }
+
+    // --- DETALLE DE PUBLICACIÓN ---
+    window.cambiarFotoDetalle = function(url, indexBoton) {
+      const imgContenedor = document.getElementById('detalle-img-main');
+      imgContenedor.style.opacity = '0.4';
+      setTimeout(() => { imgContenedor.src = url; imgContenedor.style.opacity = '1'; }, 150);
+      
+      document.querySelectorAll('.btn-miniatura').forEach((btn, i) => {
+        if(i === indexBoton) {
+          btn.classList.remove('ring-1', 'ring-gray-200', 'opacity-70'); btn.classList.add('ring-2', 'ring-black', 'opacity-100');
+        } else {
+          btn.classList.remove('ring-2', 'ring-black', 'opacity-100'); btn.classList.add('ring-1', 'ring-gray-200', 'opacity-70');
+        }
+      });
+    }
+
+    window.abrirDetalle = function(id) {
+      const prod = productos.find(p => p.id === id); if (!prod) return;
+
+      document.getElementById('seccion-principal').classList.add('hidden');
+      document.getElementById('vista-subcarpeta').classList.add('hidden');
+      document.getElementById('vista-detalle').classList.remove('hidden');
+      document.getElementById('vista-detalle').classList.add('block');
+      window.scrollTo(0,0);
+
+      const txtVolver = document.getElementById('txt-volver-detalle');
+      if (subcarpetaActiva && prod.subcarpetaId === subcarpetaActiva.id) {
+        txtVolver.innerText = `Volver a ${subcarpetaActiva.nombre}`;
+      } else {
+        txtVolver.innerText = "Volver al catálogo";
+      }
+
+      document.getElementById('detalle-cat').innerText = prod.categoria;
+      document.getElementById('detalle-titulo').innerText = prod.nombre;
+      
+      const elPrecio = document.getElementById('detalle-precio');
+      const tienePrecioVisible = prod.precio && !prod.ocultarPrecio;
+      if (tienePrecioVisible) {
+        elPrecio.innerText = `$ ${prod.precio}`;
+        elPrecio.classList.remove('hidden');
+      } else {
+        elPrecio.innerText = '';
+        elPrecio.classList.add('hidden');
+      }
+
+      document.getElementById('detalle-desc').innerText = prod.descripcion;
+      
+      const refEdificio = subcarpetaActiva ? ` (${subcarpetaActiva.nombre})` : '';
+      const textoWsp = `Hola, Me gustaría consultar por: ${prod.categoria}: ${prod.nombre}${refEdificio}.`;
+      const linkWsp = `https://wa.me/543755557632?text=${encodeURIComponent(textoWsp)}`;
+      document.getElementById('detalle-wsp-desktop').href = linkWsp;
+      document.getElementById('detalle-wsp-mobile').href = linkWsp;
+
+      const todasLasFotos = [prod.imagen, ...(prod.galeria || [])];
+      fotosUnicasActuales = [...new Set(todasLasFotos)];
+      
+      document.getElementById('detalle-img-main').src = fotosUnicasActuales[0];
+      const galeriaContenedor = document.getElementById('detalle-galeria');
+      galeriaContenedor.innerHTML = "";
+      
+      if (fotosUnicasActuales.length > 1) {
+        fotosUnicasActuales.forEach((url, i) => {
+          const clasesEstado = i === 0 ? "ring-2 ring-black opacity-100" : "ring-1 ring-gray-200 opacity-70 hover:opacity-100";
+          galeriaContenedor.innerHTML += `
+            <button type="button" onclick="cambiarFotoDetalle('${url}', ${i})" class="btn-miniatura relative aspect-square w-20 md:w-24 shrink-0 overflow-hidden rounded-xl bg-gray-100 transition-all ${clasesEstado}" aria-label="Ver foto ${i + 1}">
+              <img src="${url}" class="h-full w-full object-cover">
+            </button>`;
+        });
+      }
+
+      const divMapa = document.getElementById('contenedor-mapa-cliente');
+      if (prod.lat && prod.lng && !prod.ocultarUbicacion) {
+        divMapa.classList.remove('hidden');
+        setTimeout(() => {
+          if(!mapaCliente) {
+            mapaCliente = L.map('mapa-cliente').setView([prod.lat, prod.lng], 16);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(mapaCliente);
+            markerCliente = L.marker([prod.lat, prod.lng]).addTo(mapaCliente);
+          } else {
+            mapaCliente.setView([prod.lat, prod.lng], 16);
+            if(markerCliente) mapaCliente.removeLayer(markerCliente);
+            markerCliente = L.marker([prod.lat, prod.lng]).addTo(mapaCliente);
+          }
+          mapaCliente.invalidateSize();
+        }, 100);
+      } else { divMapa.classList.add('hidden'); }
+    }
+
+    window.cerrarDetalle = function() {
+      document.getElementById('vista-detalle').classList.add('hidden');
+      document.getElementById('vista-detalle').classList.remove('block');
+      if (subcarpetaActiva) {
+        document.getElementById('vista-subcarpeta').classList.remove('hidden');
+        if (mapaSubVista) setTimeout(() => mapaSubVista.invalidateSize(), 100);
+      } else {
+        document.getElementById('seccion-principal').classList.remove('hidden');
+        if (modoVistaActual === 'mapa' && mapaGeneral) {
+          setTimeout(() => mapaGeneral.invalidateSize(), 100);
+        }
+      }
+    }
+
+    cargarDatos();
+  </script>
+</body>
+</html>
