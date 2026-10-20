@@ -61,6 +61,70 @@
       background: #fff;
       color: #000;
     }
+
+    /* Estilos para las mini pantallitas de categoría en el Mapa General */
+    .custom-cat-pin {
+      background: transparent;
+      border: none;
+    }
+    .pin-badge {
+      position: absolute;
+      left: 0;
+      bottom: 6px;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      padding: 5px 11px;
+      border-radius: 9999px;
+      font-family: 'Inter', sans-serif;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      cursor: pointer;
+    }
+    .pin-badge:hover {
+      transform: translateX(-50%) scale(1.08);
+      z-index: 50;
+    }
+    .pin-badge-prop {
+      background-color: #ffffff;
+      color: #111827;
+      border: 1.5px solid #111827;
+    }
+    .pin-badge-prop::after {
+      content: "";
+      position: absolute;
+      bottom: -5px;
+      left: 50%;
+      transform: translateX(-50%) rotate(45deg);
+      width: 8px;
+      height: 8px;
+      background-color: #ffffff;
+      border-right: 1.5px solid #111827;
+      border-bottom: 1.5px solid #111827;
+    }
+    .pin-badge-sub {
+      background-color: #111827;
+      color: #ffffff;
+      border: 1.5px solid #ffffff;
+    }
+    .pin-badge-sub::after {
+      content: "";
+      position: absolute;
+      bottom: -5px;
+      left: 50%;
+      transform: translateX(-50%) rotate(45deg);
+      width: 8px;
+      height: 8px;
+      background-color: #111827;
+      border-right: 1.5px solid #ffffff;
+      border-bottom: 1.5px solid #ffffff;
+    }
   </style>
 </head>
 
@@ -102,11 +166,8 @@
           <h1 class="max-w-4xl text-balance text-5xl font-bold leading-tight tracking-tight text-black sm:text-6xl lg:text-7xl">
             Hasan y Asociados
           </h1>
-          <p class="mt-6 max-w-xl text-pretty text-base md:text-lg leading-relaxed text-gray-500">
-            Asesoramiento legal integral en materia inmobiliaria, terrenos y alquileres.
-          </p>
 
-          <div class="mt-12 w-full max-w-2xl">
+          <div class="mt-10 w-full max-w-2xl">
             <div class="flex items-center gap-2 rounded-full bg-white p-2 shadow-xl shadow-black/5 ring-1 ring-gray-200 transition-all focus-within:shadow-2xl focus-within:ring-gray-300">
               <div class="flex flex-1 items-center gap-3 pl-4">
                 <i class="fa-solid fa-search text-gray-400"></i>
@@ -141,7 +202,7 @@
                 <h2 class="text-xl font-bold tracking-tight text-black flex items-center gap-2">
                   <i class="fa-solid fa-map-location-dot text-gray-500"></i> Mapa de Propiedades y Edificios
                 </h2>
-                <p class="text-xs text-gray-500">Tocá cualquier marcador en el mapa para ver la tarjeta y entrar a la publicación.</p>
+                <p class="text-xs text-gray-500">Tocá cualquier etiqueta de categoría en el mapa para ver la tarjeta y entrar a la publicación.</p>
               </div>
               <span id="contador-pines-mapa" class="text-xs font-bold bg-gray-100 text-gray-700 px-3.5 py-1.5 rounded-full">0 ubicaciones</span>
             </div>
@@ -369,6 +430,18 @@
       }
     }
 
+    function crearIconoCategoria(textoCategoria, esEdificio) {
+      const claseColor = esEdificio ? 'pin-badge-sub' : 'pin-badge-prop';
+      const iconoExtra = esEdificio ? '<i class="fa-solid fa-building"></i>' : '';
+      return L.divIcon({
+        className: 'custom-cat-pin',
+        html: `<div class="pin-badge ${claseColor}">${iconoExtra}<span>${textoCategoria}</span></div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+        popupAnchor: [0, -34]
+      });
+    }
+
     function renderizarPinesMapaGeneral(listaSubcarpetas, listaProductos) {
       if (!mapaGeneral) {
         mapaGeneral = L.map('mapa-general-explorador').setView(COORDS_SAN_VICENTE, 14);
@@ -380,7 +453,7 @@
       const coordenadasParaAjuste = [];
       let totalPines = 0;
 
-      // 1. Pines de Edificios / Subcarpetas
+      // 1. Pines de Edificios / Subcarpetas (Etiqueta negra con ícono de edificio + categoría)
       listaSubcarpetas.forEach(sub => {
         if (sub.lat && sub.lng && !sub.ocultarUbicacion) {
           totalPines++;
@@ -405,12 +478,13 @@
             </div>
           `;
 
-          const marker = L.marker([sub.lat, sub.lng]).bindPopup(htmlPopupSub, { minWidth: 220, maxWidth: 220 });
+          const iconoSub = crearIconoCategoria(sub.categoria, true);
+          const marker = L.marker([sub.lat, sub.lng], { icon: iconoSub }).bindPopup(htmlPopupSub, { minWidth: 220, maxWidth: 220 });
           capaMarcadoresGeneral.addLayer(marker);
         }
       });
 
-      // 2. Pines de Propiedades Independientes
+      // 2. Pines de Propiedades Independientes (Etiqueta blanca con el nombre de la categoría)
       listaProductos.forEach(prod => {
         if (prod.lat && prod.lng && !prod.ocultarUbicacion) {
           totalPines++;
@@ -436,7 +510,8 @@
             </div>
           `;
 
-          const marker = L.marker([prod.lat, prod.lng]).bindPopup(htmlPopupProd, { minWidth: 220, maxWidth: 220 });
+          const iconoProd = crearIconoCategoria(prod.categoria, false);
+          const marker = L.marker([prod.lat, prod.lng], { icon: iconoProd }).bindPopup(htmlPopupProd, { minWidth: 220, maxWidth: 220 });
           capaMarcadoresGeneral.addLayer(marker);
         }
       });
